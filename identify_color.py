@@ -1,6 +1,6 @@
 import cv2
-import numpy as np
 import os
+import numpy as np
 from sklearn.cluster import KMeans
 
 # Define a function to convert RGB color to its name
@@ -73,4 +73,4 @@ while True:
                 # Get the dominant color of the detected object
                 roi = frame[center_y - h // 2:center_y + h // 2, center_x - w // 2:center_x + w // 2]
                 roi = cv2.resize(roi, (64, 64))
-                roi = roi.reshape((1, -1))
+                roi = roi.reshape((1, -1, 3))
