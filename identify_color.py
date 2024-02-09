@@ -1,77 +1,76 @@
 import cv2
-import matplotlib.pyplot as plt
-import matplotlib.colors as colors
 import numpy as np
+import os
+from sklearn.cluster import KMeans
 
-def get_dominant_color(image):
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    image = image.reshape(-1, 3)
+# Define a function to convert RGB color to its name
+def rgb_to_name(color):
+    # Define a dictionary of common colors and their names
+    common_colors = {
+        (255, 0, 0): 'red',
+        (0, 255, 0): 'green',
+        (0, 0, 255): 'blue',
+        (255, 255, 0): 'yellow',
+        (0, 255, 255): 'cyan',
+        (255, 0, 255): 'magenta',
+        (255, 255, 255): 'white',
+        (0, 0, 0): 'black'
+    }
 
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 0.2)
-    _, labels, colors = cv2.kmeans(image, 1, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+    # Get the closest color name from the dictionary
+    closest_color = min(common_colors.keys(), key=lambda x: np.linalg.norm(np.array(x) - np.array(color)))
+    color_name = common_colors[closest_color]
 
-    return colors[0]
+    return color_name
 
-def rgb_to_name(rgb):
-    name = None
-    r, g, b = map(int, rgb)
-    rgb_tuple = (r / 255.0, g / 255.0, b / 255.0)
-    closest_name = sorted(colors.CSS4_COLORS.items(), key=lambda x: np.linalg.norm(np.array(x[1]) - rgb_tuple))[0][0]
+# Load the YOLOv3 object detection model
+net = cv2.dnn.readNet('yolov3.weights', os.path.join(os.getcwd(), 'yolov3.cfg'))
 
-    return closest_name
+# Load the class names
+with open('coco.names', 'r') as f:
+    classes = [line.strip() for line in f.readlines()]
 
-def scanner():
-    while True:
-        ret, frame = cap.read()
+# Define the colors for the detected objects
+colors = np.random.uniform(0, 255, size=(len(classes), 3))
 
-        if not ret:
-            break
+# Load the video capture device
+cap = cv2.VideoCapture(0)
 
-        cv2.imshow("Scanner", frame)
+# Check if the video capture device is working properly
+if not cap.isOpened():
+    print('Error: Unable to open video capture device.')
+    exit()
 
-        key = cv2.waitKey(1) & 0xFF
+# Process the video frame by frame
+while True:
+    # Capture the current frame
+    ret, frame = cap.read()
 
-        if key == ord("q"):
-            break
-        elif key == ord("s"):
-            # Convert the image to HSV color space
-            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    # Check if the frame was captured successfully
+    if not ret:
+        print('Error: Unable to capture video frame.')
+        break
 
-            # Define the range of the color you want to detect
-            lower_blue = np.array([100, 50, 50])
-            upper_blue = np.array([140, 255, 255])
+    # Prepare the frame for the model
+    blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    net.setInput(blob)
 
-            # Threshold the image to get only the pixels within the defined color range
-            mask = cv2.inRange(hsv, lower_blue, upper_blue)
+    # Perform object detection
+    outs = net.forward(net.getUnconnectedOutLayersNames())
 
-            # Find the contours of the object in the mask
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Process the detection results
+    for out in outs:
+        for detection in out:
+            scores = detection[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
+            if confidence > 0.5:
+                # Object detected
+                center_x, center_y, w, h = (detection[0:4] * np.array([frame.shape[1], frame.shape[0], frame.shape[1], frame.shape[0]])).astype('int')
+                cv2.rectangle(frame, (center_x - w // 2, center_y - h // 2), (center_x + w // 2, center_y + h // 2), colors[class_id], 2)
+                cv2.putText(frame, classes[class_id], (center_x - w // 2, center_y - h // 2 - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, colors[class_id], 2)
 
-            if len(contours) > 0:
-                # Get the bounding box of the largest contour
-                x, y, w, h = cv2.boundingRect(contours[0])
-
-                # Crop the ROI around the object
-                roi = frame[y:y+h, x:x+w]
-
-                # Get the dominant color of the ROI
-                dominant_color = get_dominant_color(roi)
-
-                # Display the color name
-                color_name = rgb_to_name(dominant_color)
-                cv2.putText(roi, color_name, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-                # Display the ROI using matplotlib
-                plt.axis('off')
-                plt.imshow(roi)
-                plt.title(f"Dominant Color: {color_name}")
-                plt.show()
-
-def close_camera():
-    cap.release()
-    cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    cap = cv2.VideoCapture(0)
-    scanner()
-    close_camera()
+                # Get the dominant color of the detected object
+                roi = frame[center_y - h // 2:center_y + h // 2, center_x - w // 2:center_x + w // 2]
+                roi = cv2.resize(roi, (64, 64))
+                roi = roi.reshape((1, -1))
