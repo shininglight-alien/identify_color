@@ -1,4 +1,5 @@
 import cv2
+import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import numpy as np
 
@@ -19,35 +20,58 @@ def rgb_to_name(rgb):
 
     return closest_name
 
-def main():
-    cap = cv2.VideoCapture(0)
-
+def scanner():
     while True:
         ret, frame = cap.read()
 
-        if ret:
-            cv2.imshow("Camera Feed", frame)
+        if not ret:
+            break
 
-            if cv2.waitKey(1) & 0xFF == ord("s"):
-                break
+        cv2.imshow("Scanner", frame)
 
+        key = cv2.waitKey(1) & 0xFF
+
+        if key == ord("q"):
+            break
+        elif key == ord("s"):
+            # Convert the image to HSV color space
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+            # Define the range of the color you want to detect
+            lower_blue = np.array([100, 50, 50])
+            upper_blue = np.array([140, 255, 255])
+
+            # Threshold the image to get only the pixels within the defined color range
+            mask = cv2.inRange(hsv, lower_blue, upper_blue)
+
+            # Find the contours of the object in the mask
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            if len(contours) > 0:
+                # Get the bounding box of the largest contour
+                x, y, w, h = cv2.boundingRect(contours[0])
+
+                # Crop the ROI around the object
+                roi = frame[y:y+h, x:x+w]
+
+                # Get the dominant color of the ROI
+                dominant_color = get_dominant_color(roi)
+
+                # Display the color name
+                color_name = rgb_to_name(dominant_color)
+                cv2.putText(roi, color_name, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+                # Display the ROI using matplotlib
+                plt.axis('off')
+                plt.imshow(roi)
+                plt.title(f"Dominant Color: {color_name}")
+                plt.show()
+
+def close_camera():
     cap.release()
-
-    # Get the dominant color of the scene
-    dominant_color = get_dominant_color(frame)
-
-    # Display the color name
-    color_name = rgb_to_name(dominant_color)
-    cv2.putText(frame, color_name, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-    # Display the color name using matplotlib
-    import matplotlib.pyplot as plt
-    plt.axis('off')
-    plt.imshow(frame)
-    plt.title(f"Dominant Color: {color_name}")
-    plt.show()
-
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main()
+    cap = cv2.VideoCapture(0)
+    scanner()
+    close_camera()
